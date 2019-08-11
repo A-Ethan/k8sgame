@@ -23,7 +23,7 @@
     1.1 下载对应版本的kubectl客户端
     
     ```
-    curl -LO https://storage.googleapis.com/kubernetes-release/release/v1.13.5/bin/linux/amd64/kubectl
+    wget http://ethan-helloworld.cn-sh2.ufileos.com/kubectl
     ```
 
     1.2 赋予文件执行权限
