@@ -270,6 +270,9 @@ metadata:
   labels:
     app.kubernetes.io/name: ingress-nginx
     app.kubernetes.io/part-of: ingress-nginx
+  annotations:
+    service.beta.kubernetes.io/ucloud-load-balancer-id: "ulb-jdzm2vxn"
+    service.beta.kubernetes.io/ucloud-load-balancer-type: "outer"
 spec:
   type: LoadBalancer
   ports:
