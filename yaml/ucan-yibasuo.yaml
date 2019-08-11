@@ -377,7 +377,7 @@ metadata:
     kubernetes.io/ingress.class: nginx
 spec:
   rules:
-  - host: wp.n.uk8s.xyz
+  - host: wp.ucan.uk8s.xyz
     http:
       paths:
       - path: /
