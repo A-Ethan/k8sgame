@@ -1,0 +1,386 @@
+### namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ucannamespace
+  labels:
+    release: "wp"
+    ucan: "uk8s"
+---
+### sql-password
+apiVersion: v1
+kind: Secret
+metadata:
+  name: wp-mariadb
+  namespace: ucannamespace
+  labels:
+    app: "mariadb"
+    chart: "mariadb-5.11.3"
+    release: "wp"
+    ucan: "uk8s"
+type: Opaque
+data:
+  mariadb-root-password: "MVFTVmUzb1ZJSw=="
+  
+  mariadb-password: "UGRRUXhuMnR4eQ=="
+---
+### login-password
+apiVersion: v1
+kind: Secret
+metadata:
+  name: wp-wordpress
+  namespace: ucannamespace
+  labels:
+    app: "wp-wordpress"
+    chart: "wordpress-6.0.0"
+    release: "wp"
+    ucan: "uk8s"
+type: Opaque
+data:
+  wordpress-password: "VUNsb3VkR2FtZURheQo=" # UCloudGameDay
+---
+### config-db
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wp-mariadb
+  namespace: ucannamespace
+  labels:
+    app: "mariadb"
+    component: "master"
+    chart: "mariadb-5.11.3"
+    release: "wp"
+    ucan: "uk8s"
+data:
+  my.cnf: |-
+    [mysqld]
+    skip-name-resolve
+    explicit_defaults_for_timestamp
+    basedir=/opt/game/mariadb
+    port=3306
+    socket=/opt/game/mariadb/tmp/mysql.sock
+    tmpdir=/opt/game/mariadb/tmp
+    max_allowed_packet=16M
+    bind-address=0.0.0.0
+    pid-file=/opt/game/mariadb/tmp/mysqld.pid
+    log-error=/opt/game/mariadb/logs/mysqld.log
+    character-set-server=UTF8
+    collation-server=utf8_general_ci
+    
+    [client]
+    port=3306
+    socket=/opt/game/mariadb/tmp/mysql.sock
+    default-character-set=UTF8
+    
+    [manager]
+    port=3306
+    socket=/opt/game/mariadb/tmp/mysql.sock
+    pid-file=/opt/game/mariadb/tmp/mysqld.pid
+---
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: game-udisk-ssd
+provisioner: ucloud/udisk
+parameters:
+  type: ssd
+reclaimPolicy: Retain
+---
+### pvc-wp
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wp-wordpress
+  namespace: ucannamespace
+  labels:
+    app: "wp-wordpress"
+    chart: "wordpress-6.0.0"
+    release: "wp"
+    ucan: "uk8s"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: game-udisk-ssd 
+  resources:
+    requests:
+      storage: 10Gi
+---
+# sts-db
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: wp-mariadb
+  namespace: ucannamespace
+  labels:
+    app: "mariadb"
+    chart: "mariadb-5.11.3"
+    component: "master"
+    release: "wp"
+    ucan: "uk8s"
+spec:
+  selector:
+    matchLabels:
+      release: "wp"
+      component: "master"
+      app: "mariadb"
+  serviceName: "wp-mariadb"
+  replicas: 1
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: "mariadb"
+        component: "master"
+        release: "wp"
+        chart: "mariadb-5.11.3"
+    spec:
+      serviceAccountName: "default"
+      securityContext:
+        fsGroup: 1001
+        runAsUser: 1001
+      containers:
+      - name: "mariadb"
+        image: uhub.service.ucloud.cn/hello/mariadb:10.1.40
+        imagePullPolicy: "IfNotPresent"
+        env:
+        - name: MARIADB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: wp-mariadb
+              key: mariadb-root-password
+        - name: MARIADB_USER
+          value: "bn_wordpress"
+        - name: MARIADB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: wp-mariadb
+              key: mariadb-password
+        - name: MARIADB_DATABASE
+          value: "game_wordpress"
+        ports:
+        - name: mysql
+          containerPort: 3306
+        livenessProbe:
+          exec:
+            command: ["sh", "-c", "exec mysqladmin status -uroot -p$MARIADB_ROOT_PASSWORD"]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 1
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command: ["sh", "-c", "exec mysqladmin status -uroot -p$MARIADB_ROOT_PASSWORD"]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 1
+          successThreshold: 1
+          failureThreshold: 3
+        resources:
+          {}
+        volumeMounts:
+        - name: data
+          mountPath: /game/mariadb
+        - name: config
+          mountPath: /opt/game/mariadb/conf/my.cnf
+          subPath: my.cnf
+      volumes:
+        - name: config
+          configMap:
+            name: wp-mariadb
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app: "mariadb"
+          component: "master"
+          release: "wp"
+          ucan: "uk8s"
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: game-udisk-ssd
+        resources:
+          requests:
+            storage: "8Gi"
+---
+### svc-db
+apiVersion: v1
+kind: Service
+metadata:
+  name: wp-mariadb
+  namespace: ucannamespace
+  labels:
+    app: "mariadb"
+    component: "master"
+    chart: "mariadb-5.11.3"
+    release: "wp"
+    ucan: "uk8s"
+spec:
+  type: ClusterIP
+  ports:
+  - name: mysql
+    port: 3306
+    targetPort: mysql
+  selector:
+    app: "mariadb"
+    component: "master"
+    release: "wp"
+---
+### deploy-wp
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wp-wordpress
+  namespace: ucannamespace
+  labels:
+    app: "wp-wordpress"
+    chart: "wordpress-6.0.0"
+    release: "wp"
+    ucan: "uk8s"
+spec:
+  selector:
+    matchLabels:
+      app: "wp-wordpress"
+      release: "wp"
+  strategy: 
+    type: RollingUpdate
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: "wp-wordpress"
+        chart: "wordpress-6.0.0"
+        release: "wp"
+    spec:      
+      hostAliases:
+      - ip: "127.0.0.1"
+        hostnames:
+        - "status.localhost"
+      initContainers:
+      - name: init-db
+        image: uhub.service.ucloud.cn/hello/busybox:1.28
+        command: ['sh', '-c', 'until nslookup wp-mariadb; do echo waiting for wp-mariadb; sleep 5; done;']
+      containers:
+      - name: wordpress
+        image: uhub.service.ucloud.cn/hello/wordpress:5.2.2-debian-9-r12
+        imagePullPolicy: "IfNotPresent"
+        env:
+        - name: ALLOW_EMPTY_PASSWORD
+          value: "yes"
+        - name: MARIADB_HOST
+          value: "wp-mariadb"
+        - name: MARIADB_PORT_NUMBER
+          value: "3306"
+        - name: WORDPRESS_DATABASE_NAME
+          value: "game_wordpress"
+        - name: WORDPRESS_DATABASE_USER
+          value: "bn_wordpress"
+        - name: WORDPRESS_DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: wp-mariadb
+              key: mariadb-password
+        - name: WORDPRESS_USERNAME
+          value: "user"
+        - name: WORDPRESS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: wp-wordpress
+              key: wordpress-password
+        - name: WORDPRESS_EMAIL
+          value: "user@example.com"
+        - name: WORDPRESS_FIRST_NAME
+          value: "FirstName"
+        - name: WORDPRESS_LAST_NAME
+          value: "LastName"
+        - name: WORDPRESS_HTACCESS_OVERRIDE_NONE
+          value: "no"
+        - name: WORDPRESS_BLOG_NAME
+          value: "UCan下午茶 UK8S专场"
+        - name: WORDPRESS_SKIP_INSTALL
+          value: "no"
+        - name: WORDPRESS_TABLE_PREFIX
+          value: "wp_"
+        ports:
+        - name: http
+          containerPort: 80
+        - name: https
+          containerPort: 443
+        livenessProbe:
+          httpGet:
+            path: /wp-login.php
+            port: http
+          failureThreshold: 6
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /wp-login.php
+            port: http
+          failureThreshold: 6
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        volumeMounts:
+        - mountPath: /game/wordpress
+          name: wordpress-data
+          subPath: wordpress
+        resources:
+          requests:
+            cpu: 300m
+            memory: 512Mi
+      volumes:
+      - name: wordpress-data
+        persistentVolumeClaim:
+          claimName: wp-wordpress
+---
+### svc-wp
+apiVersion: v1
+kind: Service
+metadata:
+  name: wp-wordpress
+  namespace: ucannamespace
+  labels:
+    app: "wp-wordpress"
+    chart: "wordpress-6.0.0"
+    release: "wp"
+    ucan: "uk8s"
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: https
+      port: 443
+      targetPort: https      
+  selector:
+    app: "wp-wordpress"
+---
+### ingress
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: wp-wordpress
+  namespace: ucannamespace
+  labels: 
+    ingress: "svc-wp"
+    class: "nginx"
+    release: "wp"
+    ucan: "uk8s"
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  rules:
+  - host: wp.n.uk8s.xyz
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: wp-wordpress
+          servicePort: 80

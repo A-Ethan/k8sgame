@@ -6,15 +6,15 @@
 
     1.1 安装xshell
 
-    1.2 ubuntu 18.04
+    1.2 服务器系统ubuntu 18.04
 
     1.3 设置sudo不用密码:
 
     ```
     sudo vi /etc/sudoers
     ```
-
-    1.4 添加`ubuntu  ALL = NOPASSWD: ALL`
+    
+    添加`ubuntu  ALL = NOPASSWD: ALL`
 
 ### game 操作
 
@@ -36,6 +36,7 @@
     ```
     sudo mv ./kubectl /usr/local/bin/kubectl
     ```
+
     1.4 验证客户端安装成功
     
     ```
@@ -72,4 +73,4 @@
 
     To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
     ```
-    
+
